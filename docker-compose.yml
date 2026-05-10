@@ -1,0 +1,15 @@
+services:
+    postgres:
+        image: postgres:16
+        container_name: bd_avanzada
+        environment:
+            POSTGRES_USER: alumno
+            POSTGRES_PASSWORD: alumno123
+            POSTGRES_DB: ventas
+        ports:
+            - "5432:5432"
+        volumes:
+            - pgdata:/var/lib/postgresql/data
+
+volumes:
+    pgdata:
