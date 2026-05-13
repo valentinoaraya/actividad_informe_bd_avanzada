@@ -1,18 +1,5 @@
-"""
-BD AVANZADA — Actividad: Índices
-Script 02: Carga de datos en Python
 
-Dependencias:
-    pip install psycopg2-binary
-
-Uso:
-    python 02_datos.py
-
-Conecta al contenedor Docker con los parámetros de abajo
-e inserta los mismos datos que el script SQL original,
-pero de forma legible y explicable en una exposición.
-"""
-
+# Script 02: Carga de datos en Python
 import random
 import psycopg2
 from psycopg2.extras import execute_values
@@ -20,10 +7,7 @@ from datetime import date, datetime, timedelta
 import time
 
 
-# ============================================================
 #  CONFIGURACIÓN DE CONEXIÓN
-#  Ajustar si cambiaste algún parámetro en docker-compose.yml
-# ============================================================
 DB_CONFIG = {
     "host":     "localhost",
     "port":     5432,
@@ -32,15 +16,10 @@ DB_CONFIG = {
     "password": "alumno123",
 }
 
-# Tamaño del lote para INSERT masivo (filas por llamada a la BD)
-# 10.000 es un buen balance entre velocidad y uso de memoria RAM
+# Tamaño del lote para INSERT masivo
 BATCH_SIZE = 10_000
 
-
-# ============================================================
 #  DATOS DE REFERENCIA
-#  Las mismas listas que usaba el script SQL
-# ============================================================
 NOMBRES = [
     "Juan", "María", "Carlos", "Ana", "Luis", "Laura", "Martín", "Sofía",
     "Diego", "Valentina", "Pablo", "Florencia", "Alejandro", "Camila",
@@ -76,11 +55,11 @@ PREFIJOS_PRODUCTO = [
 
 # Distribución realista de estados: entregado es el más frecuente
 ESTADOS = (
-    ["entregado"] * 4   # ~40 %
-    + ["enviado"] * 3   # ~30 %
-    + ["procesando"] * 2  # ~20 %
-    + ["pendiente"]     # ~8 %  (random no es exacto, pero se aproxima)
-    + ["cancelado"]     # ~2 %
+    ["entregado"] * 4   # 40 %
+    + ["enviado"] * 3   # 30 %
+    + ["procesando"] * 2  # 20 %
+    + ["pendiente"]     # 8 %
+    + ["cancelado"]     # 2 %
 )
 
 # Rango de fechas para las órdenes
@@ -89,21 +68,13 @@ FECHA_FIN    = datetime(2024, 12, 31, 23, 59, 59)
 SEGUNDOS_RANGO = int((FECHA_FIN - FECHA_INICIO).total_seconds())
 
 
-# ============================================================
 #  FUNCIONES GENERADORAS
-#  Cada función es un generador (yield) para no cargar todo
-#  en memoria a la vez — importante con millones de filas.
-# ============================================================
-
 def generar_clientes(n: int):
-    """Genera n tuplas de clientes con datos aleatorios."""
     hoy = date.today()
     for i in range(1, n + 1):
         nombre   = random.choice(NOMBRES)
         apellido = random.choice(APELLIDOS)
-        # Email único garantizado: 'usuario{i}@dominio'
         email    = f"usuario{i}@{DOMINIOS[i % len(DOMINIOS)]}"
-        # Fecha de nacimiento: entre 18 y 80 años atrás
         dias_atras = random.randint(18 * 365, 80 * 365)
         nacimiento = hoy - timedelta(days=dias_atras)
         ciudad   = random.choice(CIUDADES)
@@ -111,23 +82,18 @@ def generar_clientes(n: int):
 
 
 def generar_productos(n: int):
-    """Genera n tuplas de productos distribuidos en 10 categorías."""
     for i in range(1, n + 1):
-        # Rotación determinista: cada categoría tendrá n/10 productos
         categoria = CATEGORIAS[(i - 1) % len(CATEGORIAS)]
         prefijo   = PREFIJOS_PRODUCTO[(i - 1) % len(PREFIJOS_PRODUCTO)]
         nombre    = f"{prefijo} {categoria} {str(i).zfill(4)}"
-        # Precio con distribución asimétrica (más productos baratos que caros)
         precio    = round(100 + (random.random() ** 0.7) * 99900, 2)
         stock     = random.randint(0, 500)
         yield (nombre, categoria, precio, stock)
 
 
 def generar_ordenes(n: int, max_cliente_id: int):
-    """Genera n tuplas de órdenes con fechas y estados aleatorios."""
     for _ in range(n):
         cliente_id = random.randint(1, max_cliente_id)
-        # Fecha aleatoria dentro del período de 3 años
         segundos   = random.randint(0, SEGUNDOS_RANGO)
         fecha      = FECHA_INICIO + timedelta(seconds=segundos)
         estado     = random.choice(ESTADOS)
@@ -141,7 +107,6 @@ def generar_ordenes(n: int, max_cliente_id: int):
 
 
 def generar_detalles(n: int, max_orden_id: int, max_producto_id: int):
-    """Genera n tuplas de ítems de detalle."""
     for _ in range(n):
         orden_id        = random.randint(1, max_orden_id)
         producto_id     = random.randint(1, max_producto_id)
@@ -150,17 +115,8 @@ def generar_detalles(n: int, max_orden_id: int, max_producto_id: int):
         yield (orden_id, producto_id, cantidad, precio_unitario)
 
 
-# ============================================================
 #  FUNCIÓN DE INSERCIÓN POR LOTES
-#  execute_values envía múltiples filas en un solo comando SQL,
-#  lo que es mucho más eficiente que un INSERT por fila.
-# ============================================================
-
 def insertar_en_lotes(cursor, sql: str, generador, total: int, etiqueta: str):
-    """
-    Recorre el generador de a BATCH_SIZE filas e inserta cada lote.
-    Muestra el progreso en consola.
-    """
     lote    = []
     insertados = 0
     inicio  = time.time()
@@ -168,18 +124,15 @@ def insertar_en_lotes(cursor, sql: str, generador, total: int, etiqueta: str):
     for fila in generador:
         lote.append(fila)
 
-        # Cuando el lote está lleno, lo enviamos a la BD
         if len(lote) == BATCH_SIZE:
             execute_values(cursor, sql, lote)
             insertados += len(lote)
             lote = []
-            # Progreso: mostramos cada 50.000 filas
             if insertados % 50_000 == 0:
                 transcurrido = time.time() - inicio
                 print(f"  {etiqueta}: {insertados:>10,} / {total:,}  "
                       f"({transcurrido:.1f}s transcurridos)")
 
-    # Insertar el lote final (puede tener menos de BATCH_SIZE filas)
     if lote:
         execute_values(cursor, sql, lote)
         insertados += len(lote)
@@ -188,10 +141,7 @@ def insertar_en_lotes(cursor, sql: str, generador, total: int, etiqueta: str):
     print(f"  ✓ {etiqueta}: {insertados:,} filas insertadas en {transcurrido:.1f}s")
 
 
-# ============================================================
 #  PROGRAMA PRINCIPAL
-# ============================================================
-
 def main():
     print("Conectando a PostgreSQL...")
     conn = psycopg2.connect(**DB_CONFIG)
@@ -259,7 +209,6 @@ def main():
         conn.commit()
         print("✓ Carga completa.\n")
 
-        # Verificación final
         print("=== Verificación ===")
         cur.execute("""
             SELECT

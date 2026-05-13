@@ -1,25 +1,7 @@
--- ============================================================
---  BD AVANZADA — Actividad: Índices
 --  Script 03: Consultas BASE (sin índices)
---
---  INSTRUCCIONES:
---  1. Ejecutar ANTES de crear cualquier índice.
---  2. Capturar la salida completa para el informe:
---       \o resultados_sin_indices.txt
---       \i 03_baseline_sin_indices.sql
---       \o
---  3. Guardar las métricas: "actual time", "rows", "Buffers"
--- ============================================================
 
-
--- Limpiamos cache de PostgreSQL entre consultas para medir I/O real
--- (requiere superusuario — omitir si da error de permisos)
--- DISCARD ALL;
-
-\echo '======================================================'
 \echo ' CONSULTA 1 — Búsqueda puntual por email (alta selectividad)'
 \echo ' Tipo esperado SIN índice: Seq Scan'
-\echo '======================================================'
 
 EXPLAIN (ANALYZE, BUFFERS, FORMAT TEXT)
 SELECT id, nombre, apellido, email, ciudad
@@ -28,10 +10,8 @@ WHERE email = 'usuario5000@gmail.com';
 
 
 \echo ''
-\echo '======================================================'
 \echo ' CONSULTA 2 — Rango de fechas en ordenes (selectividad media)'
 \echo ' Tipo esperado SIN índice: Seq Scan'
-\echo '======================================================'
 
 EXPLAIN (ANALYZE, BUFFERS, FORMAT TEXT)
 SELECT id, cliente_id, fecha, estado, total
@@ -40,10 +20,8 @@ WHERE fecha BETWEEN '2023-06-01' AND '2023-06-30';
 
 
 \echo ''
-\echo '======================================================'
-\echo ' CONSULTA 3 — Filtro por estado (baja selectividad ~8%)'
+\echo ' CONSULTA 3 — Filtro por estado (baja selectividad)'
 \echo ' Tipo esperado SIN índice: Seq Scan'
-\echo '======================================================'
 
 EXPLAIN (ANALYZE, BUFFERS, FORMAT TEXT)
 SELECT estado, COUNT(*) AS cantidad, ROUND(AVG(total),2) AS ticket_promedio
@@ -53,10 +31,8 @@ GROUP BY estado;
 
 
 \echo ''
-\echo '======================================================'
 \echo ' CONSULTA 4 — JOIN clientes → ordenes (sin FK index)'
 \echo ' Tipo esperado SIN índice: Hash Join + Seq Scan'
-\echo '======================================================'
 
 EXPLAIN (ANALYZE, BUFFERS, FORMAT TEXT)
 SELECT c.nombre, c.apellido, c.ciudad,
@@ -71,11 +47,9 @@ LIMIT 20;
 
 
 \echo ''
-\echo '======================================================'
 \echo ' CONSULTA 5 — Agregación en detalle_ordenes'
 \echo ' (tabla de 1.5M filas — candidata a Index Only Scan)'
 \echo ' Tipo esperado SIN índice: Seq Scan + HashAggregate'
-\echo '======================================================'
 
 EXPLAIN (ANALYZE, BUFFERS, FORMAT TEXT)
 SELECT producto_id,
@@ -88,9 +62,7 @@ GROUP BY producto_id;
 
 
 \echo ''
-\echo '======================================================'
-\echo ' RESUMEN DE TAMAÑOS (referencia para Punto 3)'
-\echo '======================================================'
+\echo ' RESUMEN DE TAMAÑOS'
 
 SELECT
     relname                                              AS tabla,

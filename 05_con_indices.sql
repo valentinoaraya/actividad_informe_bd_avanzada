@@ -1,26 +1,7 @@
--- ============================================================
---  BD AVANZADA — Actividad: Índices
 --  Script 05: Consultas CON índices + Dimensionamiento + Redundancias
---
---  INSTRUCCIONES:
---  1. Ejecutar DESPUÉS de 04_crear_indices.sql
---  2. Capturar salida completa:
---       \o resultados_con_indices.txt
---       \i 05_con_indices.sql
---       \o
---  3. Comparar contra resultados_sin_indices.txt
--- ============================================================
 
-
--- ============================================================
---  PUNTO 1 Y 2 — Mismas consultas, ahora CON índices
---  Observar: tipo de scan, tiempo, buffers leídos
--- ============================================================
-
-\echo '======================================================'
 \echo ' CONSULTA 1 — Búsqueda por email'
 \echo ' Esperado CON índice: Index Scan using idx_clientes_email'
-\echo '======================================================'
 
 EXPLAIN (ANALYZE, BUFFERS, FORMAT TEXT)
 SELECT id, nombre, apellido, email, ciudad
@@ -29,10 +10,8 @@ WHERE email = 'usuario5000@gmail.com';
 
 
 \echo ''
-\echo '======================================================'
 \echo ' CONSULTA 2 — Rango de fechas'
 \echo ' Esperado CON índice: Index Scan using idx_ordenes_fecha'
-\echo '======================================================'
 
 EXPLAIN (ANALYZE, BUFFERS, FORMAT TEXT)
 SELECT id, cliente_id, fecha, estado, total
@@ -41,11 +20,8 @@ WHERE fecha BETWEEN '2023-06-01' AND '2023-06-30';
 
 
 \echo ''
-\echo '======================================================'
-\echo ' CONSULTA 3 — Filtro por estado (baja selectividad)'
+\echo ' CONSULTA 3 — Filtro por estado'
 \echo ' Esperado CON índice: Bitmap Heap Scan'
-\echo ' (PostgreSQL elige Bitmap cuando la selectividad es media-baja)'
-\echo '======================================================'
 
 EXPLAIN (ANALYZE, BUFFERS, FORMAT TEXT)
 SELECT estado, COUNT(*) AS cantidad, ROUND(AVG(total),2) AS ticket_promedio
@@ -55,10 +31,8 @@ GROUP BY estado;
 
 
 \echo ''
-\echo '======================================================'
 \echo ' CONSULTA 4 — JOIN clientes → ordenes'
 \echo ' Esperado CON índice: Nested Loop + Index Scan on ordenes'
-\echo '======================================================'
 
 EXPLAIN (ANALYZE, BUFFERS, FORMAT TEXT)
 SELECT c.nombre, c.apellido, c.ciudad,
@@ -73,10 +47,8 @@ LIMIT 20;
 
 
 \echo ''
-\echo '======================================================'
 \echo ' CONSULTA 5 — Agregación por producto'
 \echo ' Esperado CON índice: Index Only Scan (sin leer el heap)'
-\echo '======================================================'
 
 EXPLAIN (ANALYZE, BUFFERS, FORMAT TEXT)
 SELECT producto_id,
@@ -88,15 +60,11 @@ WHERE producto_id = 3500
 GROUP BY producto_id;
 
 
--- ============================================================
 --  PUNTO 3 — DIMENSIONAMIENTO
 --  Tamaño de cada índice vs. tamaño de la tabla
--- ============================================================
 
 \echo ''
-\echo '======================================================'
 \echo ' PUNTO 3 — Tamaño de índices vs tablas'
-\echo '======================================================'
 
 SELECT
     t.relname                                           AS tabla,
@@ -134,15 +102,10 @@ WHERE schemaname = 'public'
 ORDER BY pg_total_relation_size(oid) DESC;
 
 
--- ============================================================
 --  PUNTO 4 — DETECCIÓN DE ÍNDICES REDUNDANTES / INEFICIENTES
--- ============================================================
 
 \echo ''
-\echo '======================================================'
 \echo ' PUNTO 4a — Índices con baja o nula utilización'
-\echo ' (después de ejecutar las consultas de arriba)'
-\echo '======================================================'
 
 SELECT
     s.relname                          AS tabla,
@@ -153,19 +116,15 @@ SELECT
 FROM pg_stat_user_indexes s
 JOIN pg_index i ON i.indexrelid = s.indexrelid
 WHERE s.schemaname = 'public'
-  AND s.idx_scan < 5                   -- umbral: menos de 5 usos
+  AND s.idx_scan < 5                    -- menos de 5 usos
   AND NOT i.indisprimary
 ORDER BY s.idx_scan ASC, pg_relation_size(i.indexrelid) DESC;
 
 
 \echo ''
-\echo '======================================================'
 \echo ' PUNTO 4b — Índices posiblemente redundantes'
-\echo ' (misma tabla + columna líder duplicada)'
-\echo '======================================================'
 
--- Detecta índices cuya primera columna es prefijo de otro índice
--- más largo en la misma tabla → el simple es redundante
+-- Detecta índices cuya primera columna es prefijo de otro índice más largo en la misma tabla 
 SELECT
     a.tablename                              AS tabla,
     a.indexname                              AS indice_redundante,
@@ -177,7 +136,6 @@ JOIN pg_indexes b
   ON  a.tablename  = b.tablename
   AND a.indexname != b.indexname
   AND b.indexdef LIKE '%(' || (
-        -- extraer primera columna de a
         regexp_replace(
             regexp_replace(a.indexdef, '.* USING \w+ ON \w+ \(', ''),
             '[,\)].*', ''
@@ -190,10 +148,8 @@ ORDER BY a.tablename, a.indexname;
 
 
 \echo ''
-\echo '======================================================'
 \echo ' PUNTO 4c — Cardinalidad de columnas indexadas'
 \echo ' (si n_distinct es bajo el índice probablemente no ayude)'
-\echo '======================================================'
 
 SELECT
     tablename                          AS tabla,
@@ -208,9 +164,3 @@ FROM pg_stats
 WHERE tablename IN ('clientes','ordenes','detalle_ordenes')
   AND attname IN ('email','ciudad','pais','estado','cliente_id','producto_id')
 ORDER BY tablename, abs(n_distinct) ASC;
-
--- NOTA PARA EL INFORME:
--- n_distinct = -1     → valores únicos (ideal para índice B-tree en igualdad)
--- n_distinct = pequeño → baja cardinalidad → índice poco selectivo
--- correlation ≈ 1     → datos físicamente ordenados → index scan muy eficiente
--- correlation ≈ 0     → datos desordenados → Bitmap Heap Scan es mejor opción
